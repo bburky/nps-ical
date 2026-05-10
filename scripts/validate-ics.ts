@@ -26,7 +26,7 @@ const BASE_EVENT: NpsEvent = {
   tags: [],
 };
 
-const FIXTURES: Array<{ label: string; events: NpsEvent[] }> = [
+const FIXTURES: Array<{ label: string; events: NpsEvent[]; timezone?: string }> = [
   {
     label: 'simple timed event',
     events: [BASE_EVENT],
@@ -60,6 +60,14 @@ const FIXTURES: Array<{ label: string; events: NpsEvent[] }> = [
   {
     label: 'park hours event (should be filtered out → empty calendar)',
     events: [{ ...BASE_EVENT, id: 'TEST-007', types: ['Park Hours'] }],
+  },
+  {
+    label: 'timezone-aware recurring event with EXDATE (America/Chicago)',
+    timezone: 'America/Chicago',
+    events: [{
+      ...BASE_EVENT, id: 'TEST-009', isrecurring: true,
+      recurrencerule: 'DTSTART=20260601T040000Z;UNTIL=20261201T050000Z;FREQ=DAILY;WKST=SU;INTERVAL=1|EXDATE=2026-07-04,2026-09-07',
+    }],
   },
   {
     label: 'multiple time slots',
@@ -133,8 +141,8 @@ function validate(label: string, icsText: string): boolean {
 let failed = 0;
 
 console.log('Generated ICS fixtures:');
-for (const { label, events } of FIXTURES) {
-  const ics = generateICS('test', 'Test Park', events);
+for (const { label, events, timezone } of FIXTURES) {
+  const ics = generateICS('test', 'Test Park', events, timezone);
   if (!validate(label, ics)) failed++;
 }
 

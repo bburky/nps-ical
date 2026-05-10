@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { Cache } from './cache';
 import { fetchAllParks, fetchParkEvents, findPark, type NpsPark } from './nps';
-import { generateICS } from './ical';
+import { generateICS, timezoneForCoords } from './ical';
 import { renderIndex } from './template';
 
 // Bindings for Cloudflare Workers / other serverless platforms.
@@ -146,7 +146,8 @@ app.get('/:filename', async (c) => {
   }
   console.log(`[nps] got ${events.length} events for ${parkCode}`);
 
-  const icsData = generateICS(parkCode, park.fullName, events);
+  const timezone = timezoneForCoords(park.latitude, park.longitude);
+  const icsData = generateICS(parkCode, park.fullName, events, timezone);
   appCache.set(cacheKey, icsData, icsTtlMs);
   return new Response(icsData, { status: 200, headers: icsHeaders(icsHours, 'MISS') });
 });

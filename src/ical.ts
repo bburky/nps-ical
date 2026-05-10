@@ -1,5 +1,17 @@
 import { createEvents, type EventAttributes } from 'ics';
+import tzlookup from 'tz-lookup';
 import type { NpsEvent } from './nps';
+
+export function timezoneForCoords(lat: string | number, lon: string | number): string | null {
+  const la = typeof lat === 'string' ? parseFloat(lat) : lat;
+  const lo = typeof lon === 'string' ? parseFloat(lon) : lon;
+  if (!isFinite(la) || !isFinite(lo)) return null;
+  try {
+    return tzlookup(la, lo) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 const PARK_HOURS_TYPES = new Set([
   'park hours',
@@ -109,7 +121,7 @@ function toIcsEvents(npsEvent: NpsEvent, eventsPageUrl: string): EventAttributes
     url,
     location: npsEvent.location || npsEvent.parkfullname || '',
     categories: npsEvent.types || [],
-    // Use floating time — NPS doesn't expose per-park IANA timezone identifiers.
+    // Emit local (floating) datetimes; generateICS injects TZID via post-processing.
     startInputType: 'local',
     startOutputType: 'local',
     endInputType: 'local',
@@ -149,7 +161,7 @@ function toIcsEvents(npsEvent: NpsEvent, eventsPageUrl: string): EventAttributes
   });
 }
 
-export function generateICS(parkCode: string, parkName: string, npsEvents: NpsEvent[]): string {
+export function generateICS(parkCode: string, parkName: string, npsEvents: NpsEvent[], timezone?: string | null): string {
   const eventsPageUrl = `https://www.nps.gov/${parkCode}/planyourvisit/events.htm`;
   const calName = `${parkName} Events`;
 
@@ -179,7 +191,27 @@ export function generateICS(parkCode: string, parkName: string, npsEvents: NpsEv
   const { error, value } = createEvents(icsEvents);
   if (error || !value) throw new Error(`ICS generation failed: ${error}`);
 
-  return value
+  let output = value
     .replace(/(VERSION:2\.0\r?\n)/, `$1${extraProps}\r\n`)
     .replace('X-PUBLISHED-TTL:PT1H', 'X-PUBLISHED-TTL:PT12H');
+
+  if (timezone) {
+    // Convert floating DTSTART/DTEND to timezone-aware (TZID parameter).
+    output = output
+      .replace(/^DTSTART:(\d{8}T\d{6})/gm, `DTSTART;TZID=${timezone}:$1`)
+      .replace(/^DTEND:(\d{8}T\d{6})/gm, `DTEND;TZID=${timezone}:$1`);
+
+    // Fix EXDATE: ics library emits UTC (Z suffix) for date-time arrays.
+    // Unfold any continuation lines, strip Z, and add TZID to match DTSTART.
+    output = output.replace(
+      /^EXDATE:((?:[^\r\n]*)(?:\r\n[ \t][^\r\n]*)*)/gm,
+      (_, folded: string) => {
+        const unfolded = folded.replace(/\r\n[ \t]/g, '');
+        const stripped = unfolded.replace(/(\d{8}T\d{6})Z/g, '$1');
+        return `EXDATE;TZID=${timezone}:${stripped}`;
+      }
+    );
+  }
+
+  return output;
 }

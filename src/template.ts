@@ -200,7 +200,8 @@ h1 span { font-weight: 400; color: #555; }
 footer { margin-top: 2rem; font-size: 0.78rem; color: #aaa; text-align: center; }
 @media (max-width: 560px) {
   .park { flex-direction: column; align-items: flex-start; gap: 0.4rem; }
-  .park-links { align-items: flex-start; }
+  .park-links { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.55rem; }
+  .cal-links { flex-wrap: wrap; }
 }
 </style>
 </head>

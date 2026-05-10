@@ -94,7 +94,11 @@ function toIcsEvents(npsEvent: NpsEvent, eventsPageUrl: string): EventAttributes
   const dateArr = parseDate(npsEvent.datestart || npsEvent.date);
   if (!dateArr) return [];
 
-  const endDateArr = parseDate(npsEvent.dateend) ?? dateArr;
+  const isRecurring = isTruthy(npsEvent.isrecurring);
+  // For recurring events dateend is the series end date (already captured in RRULE UNTIL),
+  // not the end of each occurrence. Each occurrence ends on the same day it starts.
+  const occurrenceEndDate = isRecurring ? dateArr : (parseDate(npsEvent.dateend) ?? dateArr);
+
   const description = buildDescription(npsEvent, eventsPageUrl);
   const url = npsEvent.infourl || npsEvent.regresurl || eventsPageUrl;
   const uid = `${npsEvent.id || npsEvent.eventid}@nps-ical`;
@@ -112,26 +116,35 @@ function toIcsEvents(npsEvent: NpsEvent, eventsPageUrl: string): EventAttributes
     endOutputType: 'local',
   };
 
-  if (isTruthy(npsEvent.isrecurring)) {
-    const { rrule, exdates } = parseRecurrenceRule(npsEvent.recurrencerule);
+  let exdates: [number, number, number][] = [];
+  if (isRecurring) {
+    const { rrule, exdates: parsed } = parseRecurrenceRule(npsEvent.recurrencerule);
     if (rrule) base.recurrenceRule = rrule;
-    if (exdates.length > 0) base.exclusionDates = exdates;
+    exdates = parsed;
   }
 
   const times = (npsEvent.times || []).filter((t) => t.timestart && !isTruthy(t.sunrisestart));
 
   if (isTruthy(npsEvent.isallday) || times.length === 0) {
-    return [{ ...base, uid, start: dateArr, end: endDateArr } as EventAttributes];
+    if (exdates.length > 0) base.exclusionDates = exdates;
+    return [{ ...base, uid, start: dateArr, end: occurrenceEndDate } as EventAttributes];
   }
 
   return times.map((slot, i): EventAttributes => {
     const s = parse12h(slot.timestart);
     const e = parse12h(slot.timeend);
+    const startArr: DateArray = s ? ([...dateArr.slice(0, 3), s.hour, s.minute] as DateArray) : dateArr;
+    const endArr: DateArray = e ? ([...occurrenceEndDate.slice(0, 3), e.hour, e.minute] as DateArray) : occurrenceEndDate;
+    // EXDATE must be DATE-TIME to match the floating DTSTART type; include the slot's start time.
+    const slotExdates: DateArray[] = s && exdates.length > 0
+      ? exdates.map(([y, m, d]) => [y, m, d, s.hour, s.minute] as [number, number, number, number, number])
+      : exdates;
     return {
       ...base,
+      ...(slotExdates.length > 0 ? { exclusionDates: slotExdates } : {}),
       uid: times.length > 1 ? `${uid}-${i}` : uid,
-      start: s ? ([...dateArr.slice(0, 3), s.hour, s.minute] as DateArray) : dateArr,
-      end: e ? ([...endDateArr.slice(0, 3), e.hour, e.minute] as DateArray) : endDateArr,
+      start: startArr,
+      end: endArr,
     } as EventAttributes;
   });
 }

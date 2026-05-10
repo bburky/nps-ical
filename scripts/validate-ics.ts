@@ -50,13 +50,21 @@ const FIXTURES: Array<{ label: string; events: NpsEvent[] }> = [
     }],
   },
   {
+    label: 'recurring timed event: DTEND same day as DTSTART, EXDATE as DATE-TIME',
+    events: [{
+      ...BASE_EVENT, id: 'TEST-005', isrecurring: true,
+      datestart: '2026-06-01', dateend: '2026-12-01',
+      recurrencerule: 'DTSTART=20260601T040000Z;UNTIL=20261201T050000Z;FREQ=DAILY;WKST=SU;INTERVAL=1|EXDATE=2026-07-04,2026-09-07',
+    }],
+  },
+  {
     label: 'park hours event (should be filtered out → empty calendar)',
-    events: [{ ...BASE_EVENT, id: 'TEST-005', types: ['Park Hours'] }],
+    events: [{ ...BASE_EVENT, id: 'TEST-007', types: ['Park Hours'] }],
   },
   {
     label: 'multiple time slots',
     events: [{
-      ...BASE_EVENT, id: 'TEST-006',
+      ...BASE_EVENT, id: 'TEST-008',
       times: [
         { timestart: '10:00 AM', timeend: '11:00 AM', sunrisestart: false, sunsetend: false },
         { timestart: '02:00 PM', timeend: '03:00 PM', sunrisestart: false, sunsetend: false },
@@ -74,14 +82,39 @@ function validate(label: string, icsText: string): boolean {
     const vevents = comp.getAllSubcomponents('vevent');
 
     for (const vevent of vevents) {
+      const summary = vevent.getFirstPropertyValue('summary') as string;
       const rruleProp = vevent.getFirstProperty('rrule');
+
       if (rruleProp) {
-        // Constructing ICAL.Recur will throw on invalid RRULE values
         const recur = rruleProp.getFirstValue() as ICAL.Recur;
         if (!recur.freq) throw new Error('RRULE missing FREQ');
         const interval = recur.interval;
         if (interval !== undefined && (!Number.isInteger(interval) || interval < 1)) {
           throw new Error(`RRULE INTERVAL must be a positive integer, got: ${interval}`);
+        }
+
+        // For recurring timed events DTEND must be same date as DTSTART.
+        const dtstart = vevent.getFirstPropertyValue('dtstart') as ICAL.Time | null;
+        const dtend = vevent.getFirstPropertyValue('dtend') as ICAL.Time | null;
+        if (dtstart && dtend && !dtstart.isDate && !dtend.isDate) {
+          const startDate = `${dtstart.year}-${dtstart.month}-${dtstart.day}`;
+          const endDate = `${dtend.year}-${dtend.month}-${dtend.day}`;
+          if (startDate !== endDate) {
+            throw new Error(
+              `"${summary}": DTSTART date (${startDate}) ≠ DTEND date (${endDate}) on recurring event — DTEND should be same-day as DTSTART`
+            );
+          }
+        }
+
+        // EXDATE type must match DTSTART type.
+        const exdateProp = vevent.getFirstProperty('exdate');
+        if (exdateProp && dtstart) {
+          const exdate = exdateProp.getFirstValue() as ICAL.Time;
+          if (exdate.isDate !== dtstart.isDate) {
+            throw new Error(
+              `"${summary}": EXDATE value type (isDate=${exdate.isDate}) does not match DTSTART (isDate=${dtstart.isDate})`
+            );
+          }
         }
       }
     }

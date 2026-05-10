@@ -3,15 +3,20 @@
   "version": "1.0.0",
   "description": "iCal feeds for National Park Service events",
   "type": "module",
-  "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js"
+    "start": "tsx index.ts",
+    "dev": "tsx --watch index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
     "hono": "^4.7.9",
     "ics": "^3.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
   },
   "engines": {
     "node": ">=18"

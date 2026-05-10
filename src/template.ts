@@ -1,4 +1,6 @@
-const STATE_NAMES = {
+import type { NpsPark, NpsAddress } from './nps';
+
+const STATE_NAMES: Record<string, string> = {
   AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas',
   CA: 'California', CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware',
   FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho',
@@ -16,7 +18,7 @@ const STATE_NAMES = {
   MP: 'Northern Mariana Islands',
 };
 
-function esc(str) {
+function esc(str: string): string {
   return String(str || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -24,13 +26,13 @@ function esc(str) {
     .replace(/"/g, '&quot;');
 }
 
-function getCity(park) {
-  const physical = (park.addresses || []).find((a) => a.type === 'Physical');
-  const addr = physical || park.addresses?.[0];
+function getCity(park: NpsPark): string {
+  const physical = (park.addresses || []).find((a: NpsAddress) => a.type === 'Physical');
+  const addr = physical ?? park.addresses?.[0];
   return addr?.city || '';
 }
 
-function expandStates(codesStr) {
+function expandStates(codesStr: string): string {
   return (codesStr || '')
     .split(',')
     .map((c) => STATE_NAMES[c.trim()] || '')
@@ -38,27 +40,19 @@ function expandStates(codesStr) {
     .join(' ');
 }
 
-function buildSearchText(park, city) {
-  return [
-    park.fullName,
-    park.name,
-    park.designation,
-    park.states,
-    expandStates(park.states),
-    city,
-  ]
+function buildSearchText(park: NpsPark, city: string): string {
+  return [park.fullName, park.name, park.designation, park.states, expandStates(park.states), city]
     .join(' ')
     .toLowerCase();
 }
 
-function renderPark(park) {
+function renderPark(park: NpsPark): string {
   const city = getCity(park);
   const codes = (park.states || '').split(',').map((s) => s.trim()).filter(Boolean);
   const locationParts = [codes.join(', ')];
   if (city) locationParts.push(city);
-  const searchText = buildSearchText(park, city);
 
-  return `<li class="park" data-search="${esc(searchText)}">
+  return `<li class="park" data-search="${esc(buildSearchText(park, city))}">
   <div class="park-info">
     <span class="park-name">${esc(park.fullName)}</span
     ><span class="park-type">${esc(park.designation)}</span>
@@ -66,17 +60,13 @@ function renderPark(park) {
   </div>
   <div class="park-links">
     <a href="${esc(park.url)}" target="_blank" rel="noopener">Official site</a>
-    <a href="/ics/${esc(park.parkCode)}" class="ics-link">iCal feed</a>
+    <a href="/${esc(park.parkCode)}.ics" class="ics-link">iCal feed</a>
   </div>
 </li>`;
 }
 
-export function renderIndex(parks) {
-  // Sort: alphabetically by fullName
-  const sorted = [...parks].sort((a, b) =>
-    (a.fullName || '').localeCompare(b.fullName || ''),
-  );
-
+export function renderIndex(parks: NpsPark[]): string {
+  const sorted = [...parks].sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
   const parkItems = sorted.map(renderPark).join('\n');
   const total = sorted.length;
 
@@ -99,23 +89,10 @@ body {
   margin: 0 auto;
   padding: 1.5rem 1rem;
 }
-header {
-  margin-bottom: 1.5rem;
-}
-h1 {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: #1b4d2e;
-}
-h1 span {
-  font-weight: 400;
-  color: #555;
-}
-.subtitle {
-  font-size: 0.85rem;
-  color: #666;
-  margin-top: 0.3rem;
-}
+header { margin-bottom: 1.5rem; }
+h1 { font-size: 1.4rem; font-weight: 700; color: #1b4d2e; }
+h1 span { font-weight: 400; color: #555; }
+.subtitle { font-size: 0.85rem; color: #666; margin-top: 0.3rem; }
 .search-wrap {
   position: sticky;
   top: 0;
@@ -136,14 +113,8 @@ h1 span {
   transition: border-color 0.15s;
 }
 #search:focus { border-color: #1b4d2e; }
-#count {
-  font-size: 0.8rem;
-  color: #888;
-  margin-top: 0.4rem;
-}
-.park-list {
-  list-style: none;
-}
+#count { font-size: 0.8rem; color: #888; margin-top: 0.4rem; }
+.park-list { list-style: none; }
 .park {
   display: flex;
   justify-content: space-between;
@@ -154,10 +125,7 @@ h1 span {
 }
 .park[hidden] { display: none; }
 .park-info { flex: 1; min-width: 0; }
-.park-name {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
+.park-name { font-weight: 600; font-size: 0.95rem; }
 .park-type {
   display: inline-block;
   margin-left: 0.4rem;
@@ -171,11 +139,7 @@ h1 span {
   vertical-align: middle;
   white-space: nowrap;
 }
-.park-loc {
-  font-size: 0.8rem;
-  color: #666;
-  margin-top: 0.15rem;
-}
+.park-loc { font-size: 0.8rem; color: #666; margin-top: 0.15rem; }
 .park-links {
   display: flex;
   flex-direction: column;
@@ -183,26 +147,11 @@ h1 span {
   flex-shrink: 0;
   text-align: right;
 }
-.park-links a {
-  font-size: 0.8rem;
-  color: #1b4d2e;
-  text-decoration: none;
-  white-space: nowrap;
-}
+.park-links a { font-size: 0.8rem; color: #1b4d2e; text-decoration: none; white-space: nowrap; }
 .park-links a:hover { text-decoration: underline; }
 .ics-link::before { content: "📅 "; }
-.no-results {
-  padding: 2rem 0;
-  color: #888;
-  font-size: 0.9rem;
-  display: none;
-}
-footer {
-  margin-top: 2rem;
-  font-size: 0.78rem;
-  color: #aaa;
-  text-align: center;
-}
+.no-results { padding: 2rem 0; color: #888; font-size: 0.9rem; display: none; }
+footer { margin-top: 2rem; font-size: 0.78rem; color: #aaa; text-align: center; }
 @media (max-width: 500px) {
   .park { flex-direction: column; align-items: flex-start; gap: 0.4rem; }
   .park-links { flex-direction: row; text-align: left; }
@@ -227,26 +176,21 @@ ${parkItems}
 </div>
 <script>
 (function () {
-  const search = document.getElementById('search');
-  const count = document.getElementById('count');
-  const noResults = document.getElementById('no-results');
-  const parks = Array.from(document.querySelectorAll('.park'));
-  const total = parks.length;
+  var search = document.getElementById('search');
+  var count = document.getElementById('count');
+  var noResults = document.getElementById('no-results');
+  var parks = Array.from(document.querySelectorAll('.park'));
+  var total = parks.length;
 
   function update() {
-    const raw = search.value.trim().toLowerCase();
-    const words = raw.split(/\\s+/).filter(Boolean);
-    let visible = 0;
+    var raw = search.value.trim().toLowerCase();
+    var words = raw.split(/\\s+/).filter(Boolean);
+    var visible = 0;
 
     parks.forEach(function (el) {
-      if (words.length === 0) {
-        el.hidden = false;
-        visible++;
-        return;
-      }
-      const text = el.dataset.search;
-      // Every word must appear somewhere in the combined search text
-      const match = words.every(function (w) { return text.includes(w); });
+      if (words.length === 0) { el.hidden = false; visible++; return; }
+      var text = el.dataset.search;
+      var match = words.every(function (w) { return text.includes(w); });
       el.hidden = !match;
       if (match) visible++;
     });

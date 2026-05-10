@@ -70,7 +70,7 @@ paths:
               schema:
                 type: string
 
-  /ics/{parkCode}:
+  /{parkCode}.ics:
     get:
       operationId: getParkICS
       summary: iCal feed for a park's upcoming events
@@ -79,12 +79,14 @@ paths:
         given NPS park code (e.g. `hosp` for Hot Springs National Park,
         `yell` for Yellowstone).
 
-        Park codes match the four-letter codes used by the NPS API and in
-        `www.nps.gov` URLs (e.g. `nps.gov/yell/`).
+        Park codes match the codes used by the NPS API and in `www.nps.gov`
+        URLs (e.g. `nps.gov/yell/`).
 
         The feed omits park-hours entries and includes most other event types.
         Each event contains a description with fee/registration information and
-        a link to the park events page.
+        a link to the park events page. Times are expressed as floating local
+        time (no IANA timezone suffix), since the NPS API does not expose
+        per-park timezone identifiers.
 
         Calendar clients are instructed to refresh every 12 hours via the
         `REFRESH-INTERVAL` VCALENDAR property and the `X-Published-TTL` header.
@@ -93,11 +95,12 @@ paths:
         - name: parkCode
           in: path
           required: true
-          description: Four-letter NPS park code (case-insensitive).
+          description: NPS park code (case-insensitive), without the `.ics` extension.
           schema:
             type: string
             minLength: 2
             maxLength: 10
+            pattern: '^[a-z0-9-]+$'
             example: hosp
       responses:
         '200':

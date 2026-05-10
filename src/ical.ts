@@ -1,4 +1,5 @@
-import { createEvents } from 'ics';
+import { createEvents, type EventAttributes } from 'ics';
+import type { NpsEvent } from './nps';
 
 const PARK_HOURS_TYPES = new Set([
   'park hours',
@@ -6,7 +7,7 @@ const PARK_HOURS_TYPES = new Set([
   'operating hours',
 ]);
 
-function stripHtml(html) {
+function stripHtml(html: string): string {
   return String(html || '')
     .replace(/<[^>]*>/g, ' ')
     .replace(/&amp;/g, '&')
@@ -19,9 +20,7 @@ function stripHtml(html) {
     .trim();
 }
 
-// Parse "10:00 AM" → { hour, minute }
-function parse12h(timeStr) {
-  if (!timeStr) return null;
+function parse12h(timeStr: string): { hour: number; minute: number } | null {
   const m = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
   if (!m) return null;
   let hour = parseInt(m[1], 10);
@@ -32,26 +31,26 @@ function parse12h(timeStr) {
   return { hour, minute };
 }
 
-// Parse "2024-01-15" → [2024, 1, 15]
-function parseDate(dateStr) {
-  if (!dateStr) return null;
+type DateArray = [number, number, number] | [number, number, number, number, number];
+
+function parseDate(dateStr: string): DateArray | null {
   const parts = dateStr.split('-').map(Number);
   if (parts.length !== 3 || parts.some(isNaN)) return null;
-  return parts;
+  return parts as [number, number, number];
 }
 
-// Strip DTSTART from NPS recurrencerule so we can pass it to ics as RRULE
-function toRRule(ruleStr) {
+function toRRule(ruleStr: string): string | null {
   if (!ruleStr) return null;
-  return ruleStr
+  const cleaned = ruleStr
     .split(';')
     .filter((p) => !p.startsWith('DTSTART=') && !p.startsWith('COUNT=0'))
     .join(';')
     .replace(/;$/, '');
+  return cleaned || null;
 }
 
-function buildDescription(event, eventsPageUrl) {
-  const parts = [];
+function buildDescription(event: NpsEvent, eventsPageUrl: string): string {
+  const parts: string[] = [];
   const body = stripHtml(event.description);
   if (body) parts.push(body);
   if (event.feeinfo) parts.push(`Fee info: ${stripHtml(event.feeinfo)}`);
@@ -62,66 +61,66 @@ function buildDescription(event, eventsPageUrl) {
   return parts.join('\n\n');
 }
 
-// Convert one NPS event into one or more ics event objects (one per time slot).
-function toIcsEvents(npsEvent, eventsPageUrl) {
+function isTruthy(val: boolean | string | undefined): boolean {
+  return val === true || val === 'true';
+}
+
+function toIcsEvents(npsEvent: NpsEvent, eventsPageUrl: string): EventAttributes[] {
   const types = (npsEvent.types || []).map((t) => t.toLowerCase());
   if (types.some((t) => PARK_HOURS_TYPES.has(t))) return [];
 
   const dateArr = parseDate(npsEvent.datestart || npsEvent.date);
   if (!dateArr) return [];
 
-  const endDateArr = parseDate(npsEvent.dateend) || dateArr;
+  const endDateArr = parseDate(npsEvent.dateend) ?? dateArr;
   const description = buildDescription(npsEvent, eventsPageUrl);
   const url = npsEvent.infourl || npsEvent.regresurl || eventsPageUrl;
   const uid = `${npsEvent.id || npsEvent.eventid}@nps-ical`;
-  const title = npsEvent.title || 'NPS Event';
-  const location = npsEvent.location || npsEvent.parkfullname || '';
-  const categories = npsEvent.types || [];
 
-  const rrule = npsEvent.isrecurring ? toRRule(npsEvent.recurrencerule) : null;
-
-  const base = { title, description, url, location, categories };
-  if (rrule) base.recurrenceRule = rrule;
-
-  const times = (npsEvent.times || []).filter(
-    (t) => t.timestart && !t.sunrisestart,
-  );
-
-  // Use floating time (no timezone suffix) — NPS doesn't expose per-park IANA zones.
-  // Calendar apps will display these in the user's local timezone, which is the
-  // best approximation available without knowing each park's exact timezone.
-  const localTime = {
+  const base: Partial<EventAttributes> = {
+    title: npsEvent.title || 'NPS Event',
+    description,
+    url,
+    location: npsEvent.location || npsEvent.parkfullname || '',
+    categories: npsEvent.types || [],
+    // Use floating time — NPS doesn't expose per-park IANA timezone identifiers.
     startInputType: 'local',
     startOutputType: 'local',
     endInputType: 'local',
     endOutputType: 'local',
   };
 
-  if (npsEvent.isallday || times.length === 0) {
-    return [{ ...base, ...localTime, uid, start: dateArr, end: endDateArr }];
+  if (isTruthy(npsEvent.isrecurring)) {
+    const rrule = toRRule(npsEvent.recurrencerule);
+    if (rrule) base.recurrenceRule = rrule;
   }
 
-  return times.map((slot, i) => {
+  const times = (npsEvent.times || []).filter((t) => t.timestart && !isTruthy(t.sunrisestart));
+
+  if (isTruthy(npsEvent.isallday) || times.length === 0) {
+    return [{ ...base, uid, start: dateArr, end: endDateArr } as EventAttributes];
+  }
+
+  return times.map((slot, i): EventAttributes => {
     const s = parse12h(slot.timestart);
     const e = parse12h(slot.timeend);
     return {
       ...base,
-      ...localTime,
       uid: times.length > 1 ? `${uid}-${i}` : uid,
-      start: s ? [...dateArr, s.hour, s.minute] : dateArr,
-      end: e ? [...endDateArr, e.hour, e.minute] : endDateArr,
-    };
+      start: s ? ([...dateArr.slice(0, 3), s.hour, s.minute] as DateArray) : dateArr,
+      end: e ? ([...endDateArr.slice(0, 3), e.hour, e.minute] as DateArray) : endDateArr,
+    } as EventAttributes;
   });
 }
 
-export function generateICS(parkCode, parkName, npsEvents) {
+export function generateICS(parkCode: string, parkName: string, npsEvents: NpsEvent[]): string {
   const eventsPageUrl = `https://www.nps.gov/${parkCode}/planyourvisit/events.htm`;
   const calName = `${parkName} Events`;
 
   const icsEvents = npsEvents.flatMap((e) => toIcsEvents(e, eventsPageUrl));
 
-  // Properties added by the ics library: CALSCALE, METHOD, X-PUBLISHED-TTL:PT1H
-  // We inject our own additions after VERSION:2.0 and then fix the TTL.
+  // Properties the ics library already emits: CALSCALE, METHOD, X-PUBLISHED-TTL:PT1H
+  // We inject ours after VERSION:2.0 and override the TTL.
   const extraProps = [
     `X-WR-CALNAME:${calName}`,
     `X-WR-CALDESC:Upcoming events at ${parkName}`,
@@ -142,7 +141,7 @@ export function generateICS(parkCode, parkName, npsEvents) {
   }
 
   const { error, value } = createEvents(icsEvents);
-  if (error) throw new Error(`ICS generation failed: ${error}`);
+  if (error || !value) throw new Error(`ICS generation failed: ${error}`);
 
   return value
     .replace(/(VERSION:2\.0\r?\n)/, `$1${extraProps}\r\n`)

@@ -65,15 +65,11 @@ function renderPark(park: NpsPark): string {
     <div class="park-loc">${esc(locationParts.join(' · '))}</div>
   </div>
   <div class="park-links">
-    <a href="${esc(park.url)}" target="_blank" rel="noopener" class="official-link">Official site 🏞️</a>
+    <a href="${esc(park.url)}" target="_blank" rel="noopener" class="official-link"><span class="link-text">Official site</span> 🏞️</a>
     <div class="cal-links">
-      <a href="${icsPath}" data-webcal="${icsPath}" class="cal-btn" title="Subscribe in Apple Calendar">
-        <svg width="16" height="16" aria-hidden="true"><use href="#icon-apple-cal"/></svg>Apple
-      </a>
-      <a href="${icsPath}" data-gcal="${icsPath}" class="cal-btn" target="_blank" rel="noopener" title="Subscribe in Google Calendar">
-        <svg width="16" height="16" aria-hidden="true"><use href="#icon-google-cal"/></svg>Google
-      </a>
-      <a href="${icsPath}" class="cal-btn ics-btn">iCal 📅</a>
+      <a href="${icsPath}" data-webcal="${icsPath}" class="cal-btn" title="Subscribe in Apple Calendar"><span class="link-text">Apple</span><svg width="16" height="16" aria-hidden="true"><use href="#icon-apple-cal"/></svg></a>
+      <a href="${icsPath}" data-gcal="${icsPath}" class="cal-btn" target="_blank" rel="noopener" title="Subscribe in Google Calendar"><span class="link-text">Google</span><svg width="16" height="16" aria-hidden="true"><use href="#icon-google-cal"/></svg></a>
+      <a href="${icsPath}" class="cal-btn"><span class="link-text">iCal</span> 📅</a>
     </div>
   </div>
 </li>`;
@@ -94,10 +90,7 @@ const SVG_DEFS = `<svg aria-hidden="true" style="position:absolute;width:0;heigh
       <path d="M4,4 Q2,4 2,6 L2,10 L22,10 L22,6 Q22,4 20,4 Z" fill="#4285F4"/>
       <rect x="7" y="2" width="2" height="4" rx="1" fill="#888"/>
       <rect x="15" y="2" width="2" height="4" rx="1" fill="#888"/>
-      <rect x="7"  y="11" width="4" height="4" fill="#4285F4"/>
-      <rect x="13" y="11" width="4" height="4" fill="#0F9D58"/>
-      <rect x="7"  y="17" width="4" height="4" fill="#F4B400"/>
-      <rect x="13" y="17" width="4" height="4" fill="#DB4437"/>
+      <text x="12" y="19.5" text-anchor="middle" font-family="Arial,sans-serif" font-size="8" font-weight="700" fill="#4285F4">31</text>
     </symbol>
   </defs>
 </svg>`;
@@ -184,19 +177,7 @@ h1 span { font-weight: 400; color: #555; }
   gap: 0.3rem;
   flex-shrink: 0;
 }
-.official-link {
-  font-size: 0.8rem;
-  color: #1b4d2e;
-  text-decoration: none;
-  white-space: nowrap;
-}
-.official-link:hover { text-decoration: underline; }
-.cal-links {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-}
-.cal-btn {
+.official-link, .cal-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
@@ -205,8 +186,14 @@ h1 span { font-weight: 400; color: #555; }
   text-decoration: none;
   white-space: nowrap;
 }
-.cal-btn:hover { text-decoration: underline; }
+.official-link:hover .link-text,
+.cal-btn:hover .link-text { text-decoration: underline; }
 .cal-btn svg { display: block; flex-shrink: 0; }
+.cal-links {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
 .no-results { padding: 2rem 0; color: #888; font-size: 0.9rem; display: none; }
 footer { margin-top: 2rem; font-size: 0.78rem; color: #aaa; text-align: center; }
 @media (max-width: 560px) {

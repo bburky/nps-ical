@@ -218,7 +218,7 @@ ${SVG_DEFS}
 ${parkItems}
   </ul>
   <p class="no-results" id="no-results">No parks match your search.</p>
-  <footer>Data from the <a href="https://www.nps.gov/subjects/developer/" style="color:#888">NPS API</a>. iCal feeds refresh every 12 hours.</footer>
+  <footer>Data from the <a href="https://www.nps.gov/subjects/developer/" style="color:#888">NPS API</a>. iCal feeds refresh every 12 hours. Vibecoded with <a href="https://claude.ai" style="color:#888">Claude</a>, no promises on accuracy.</footer>
 </div>
 <script>
 (function () {

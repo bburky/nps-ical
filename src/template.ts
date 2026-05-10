@@ -219,7 +219,7 @@ ${SVG_DEFS}
 ${parkItems}
   </ul>
   <p class="no-results" id="no-results">No parks match your search.</p>
-  <footer>Data from the <a href="https://www.nps.gov/subjects/developer/" style="color:#888">NPS API</a>. iCal feeds refresh every ${icsCacheHours} hour${icsCacheHours === 1 ? '' : 's'}. Vibecoded with <a href="https://claude.ai" style="color:#888">Claude</a>, no promises on accuracy.</footer>
+  <footer>Data from the <a href="https://www.nps.gov/subjects/developer/" style="color:#888">NPS API</a>. iCal feeds refresh every ${icsCacheHours} hour${icsCacheHours === 1 ? '' : 's'}. Vibecoded with <a href="https://claude.ai" style="color:#888">Claude</a>, no promises on accuracy. <a href="https://github.com/bburky/nps-ical" style="color:#888">Source code</a>.</footer>
 </div>
 <script>
 (function () {

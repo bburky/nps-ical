@@ -13,7 +13,8 @@
   "dependencies": {
     "@hono/node-server": "^1.13.7",
     "hono": "^4.7.9",
-    "ics": "^3.8.1"
+    "ics": "^3.8.1",
+    "wrangler": "^4.90.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.17",

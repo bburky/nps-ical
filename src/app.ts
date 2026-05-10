@@ -84,11 +84,11 @@ app.get('/', async (c) => {
 /**
  * GET /:parkCode.ics
  * iCal feed for a park's upcoming events. e.g. /hosp.ics, /yell.ics
- *
- * The {[a-z0-9-]+} constraint prevents `:parkCode` from consuming the `.ics` suffix.
  */
-app.get('/:parkCode{[a-z0-9-]+}.ics', async (c) => {
-  const parkCode = c.req.param('parkCode').toLowerCase();
+app.get('/:filename', async (c) => {
+  const filename = c.req.param('filename');
+  if (!filename.endsWith('.ics')) return c.notFound();
+  const parkCode = filename.slice(0, -4).toLowerCase();
   console.log(`[GET] /${parkCode}.ics`);
 
   const cacheKey = `ics:${parkCode}`;

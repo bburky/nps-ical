@@ -39,14 +39,36 @@ function parseDate(dateStr: string): DateArray | null {
   return parts as [number, number, number];
 }
 
-function toRRule(ruleStr: string): string | null {
-  if (!ruleStr) return null;
-  const cleaned = ruleStr
-    .split(';')
-    .filter((p) => !p.startsWith('DTSTART=') && !p.startsWith('COUNT=0'))
-    .join(';')
-    .replace(/;$/, '');
-  return cleaned || null;
+// NPS encodes RRULE and EXDATE together with a pipe: "FREQ=...;INTERVAL=1|EXDATE=2026-04-15,..."
+// Split them apart and return each piece cleanly.
+function parseRecurrenceRule(ruleStr: string): {
+  rrule: string | null;
+  exdates: [number, number, number][];
+} {
+  if (!ruleStr) return { rrule: null, exdates: [] };
+
+  const pipeIdx = ruleStr.indexOf('|');
+  const rrulePart = pipeIdx === -1 ? ruleStr : ruleStr.slice(0, pipeIdx);
+  const exdatePart = pipeIdx === -1 ? '' : ruleStr.slice(pipeIdx + 1);
+
+  const rrule =
+    rrulePart
+      .split(';')
+      .filter((p) => !p.startsWith('DTSTART=') && !p.startsWith('COUNT=0'))
+      .join(';')
+      .replace(/;+$/, '') || null;
+
+  const exdates: [number, number, number][] = [];
+  if (exdatePart.startsWith('EXDATE=')) {
+    for (const d of exdatePart.slice('EXDATE='.length).split(',')) {
+      const parts = d.trim().split('-').map(Number);
+      if (parts.length === 3 && parts.every(Number.isFinite)) {
+        exdates.push(parts as [number, number, number]);
+      }
+    }
+  }
+
+  return { rrule, exdates };
 }
 
 function buildDescription(event: NpsEvent, eventsPageUrl: string): string {
@@ -91,8 +113,9 @@ function toIcsEvents(npsEvent: NpsEvent, eventsPageUrl: string): EventAttributes
   };
 
   if (isTruthy(npsEvent.isrecurring)) {
-    const rrule = toRRule(npsEvent.recurrencerule);
+    const { rrule, exdates } = parseRecurrenceRule(npsEvent.recurrencerule);
     if (rrule) base.recurrenceRule = rrule;
+    if (exdates.length > 0) base.exclusionDates = exdates;
   }
 
   const times = (npsEvent.times || []).filter((t) => t.timestart && !isTruthy(t.sunrisestart));

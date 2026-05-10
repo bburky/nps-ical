@@ -209,7 +209,7 @@ footer { margin-top: 2rem; font-size: 0.78rem; color: #aaa; text-align: center; 
 ${SVG_DEFS}
 <div class="container">
   <header>
-    <h1>National Park Service <span>iCal Event Feeds</span></h1>
+    <h1><span>Unofficial</span> National Park Service <span>iCal Event Feeds</span></h1>
     <p class="subtitle">Subscribe to any park's upcoming events in your calendar app.</p>
   </header>
   <div class="search-wrap">

@@ -41,6 +41,7 @@ function expandStates(codesStr: string): string {
 }
 
 function buildSearchText(park: NpsPark, city: string): string {
+  // Include both name and fullName (which has designation) so either term matches
   return [park.fullName, park.name, park.designation, park.states, expandStates(park.states), city]
     .join(' ')
     .toLowerCase();
@@ -52,21 +53,57 @@ function renderPark(park: NpsPark): string {
   const locationParts = [codes.join(', ')];
   if (city) locationParts.push(city);
 
+  const designationBadge = park.designation
+    ? `<span class="park-type">${esc(park.designation)}</span>`
+    : '';
+
+  const icsPath = `/${esc(park.parkCode)}.ics`;
+
   return `<li class="park" data-search="${esc(buildSearchText(park, city))}">
   <div class="park-info">
-    <span class="park-name">${esc(park.fullName)}</span
-    ><span class="park-type">${esc(park.designation)}</span>
+    <span class="park-name">${esc(park.name)}</span>${designationBadge}
     <div class="park-loc">${esc(locationParts.join(' · '))}</div>
   </div>
   <div class="park-links">
-    <a href="${esc(park.url)}" target="_blank" rel="noopener">Official site</a>
-    <a href="/${esc(park.parkCode)}.ics" class="ics-link">iCal feed</a>
+    <a href="${esc(park.url)}" target="_blank" rel="noopener" class="official-link">Official site 🏞️</a>
+    <div class="cal-links">
+      <a href="${icsPath}" data-webcal="${icsPath}" class="cal-btn" title="Subscribe in Apple Calendar">
+        <svg width="16" height="16" aria-hidden="true"><use href="#icon-apple-cal"/></svg>Apple
+      </a>
+      <a href="${icsPath}" data-gcal="${icsPath}" class="cal-btn" target="_blank" rel="noopener" title="Subscribe in Google Calendar">
+        <svg width="16" height="16" aria-hidden="true"><use href="#icon-google-cal"/></svg>Google
+      </a>
+      <a href="${icsPath}" class="cal-btn ics-btn">iCal 📅</a>
+    </div>
   </div>
 </li>`;
 }
 
+// SVG symbols defined once, referenced with <use> per park row
+const SVG_DEFS = `<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <symbol id="icon-apple-cal" viewBox="0 0 24 24">
+      <rect x="2" y="4" width="20" height="18" rx="2" fill="white" stroke="#d0d0d0" stroke-width="1"/>
+      <path d="M4,4 Q2,4 2,6 L2,10 L22,10 L22,6 Q22,4 20,4 Z" fill="#FF3B30"/>
+      <rect x="7" y="2" width="2" height="4" rx="1" fill="#888"/>
+      <rect x="15" y="2" width="2" height="4" rx="1" fill="#888"/>
+      <text x="12" y="19.5" text-anchor="middle" font-family="system-ui,Arial,sans-serif" font-size="8" font-weight="600" fill="#1a1a1a">7</text>
+    </symbol>
+    <symbol id="icon-google-cal" viewBox="0 0 24 24">
+      <rect x="2" y="4" width="20" height="18" rx="2" fill="white" stroke="#d0d0d0" stroke-width="1"/>
+      <path d="M4,4 Q2,4 2,6 L2,10 L22,10 L22,6 Q22,4 20,4 Z" fill="#4285F4"/>
+      <rect x="7" y="2" width="2" height="4" rx="1" fill="#888"/>
+      <rect x="15" y="2" width="2" height="4" rx="1" fill="#888"/>
+      <rect x="7"  y="11" width="4" height="4" fill="#4285F4"/>
+      <rect x="13" y="11" width="4" height="4" fill="#0F9D58"/>
+      <rect x="7"  y="17" width="4" height="4" fill="#F4B400"/>
+      <rect x="13" y="17" width="4" height="4" fill="#DB4437"/>
+    </symbol>
+  </defs>
+</svg>`;
+
 export function renderIndex(parks: NpsPark[]): string {
-  const sorted = [...parks].sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
+  const sorted = [...parks].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   const parkItems = sorted.map(renderPark).join('\n');
   const total = sorted.length;
 
@@ -85,7 +122,7 @@ body {
   min-height: 100vh;
 }
 .container {
-  max-width: 860px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 1.5rem 1rem;
 }
@@ -143,22 +180,43 @@ h1 span { font-weight: 400; color: #555; }
 .park-links {
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 0.3rem;
   flex-shrink: 0;
-  text-align: right;
 }
-.park-links a { font-size: 0.8rem; color: #1b4d2e; text-decoration: none; white-space: nowrap; }
-.park-links a:hover { text-decoration: underline; }
-.ics-link::before { content: "📅 "; }
+.official-link {
+  font-size: 0.8rem;
+  color: #1b4d2e;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.official-link:hover { text-decoration: underline; }
+.cal-links {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.cal-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: #1b4d2e;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.cal-btn:hover { text-decoration: underline; }
+.cal-btn svg { display: block; flex-shrink: 0; }
 .no-results { padding: 2rem 0; color: #888; font-size: 0.9rem; display: none; }
 footer { margin-top: 2rem; font-size: 0.78rem; color: #aaa; text-align: center; }
-@media (max-width: 500px) {
+@media (max-width: 560px) {
   .park { flex-direction: column; align-items: flex-start; gap: 0.4rem; }
-  .park-links { flex-direction: row; text-align: left; }
+  .park-links { align-items: flex-start; }
 }
 </style>
 </head>
 <body>
+${SVG_DEFS}
 <div class="container">
   <header>
     <h1>National Park Service <span>iCal Event Feeds</span></h1>
@@ -176,6 +234,17 @@ ${parkItems}
 </div>
 <script>
 (function () {
+  // Upgrade subscription links to absolute webcal:// URLs based on the current host
+  var host = window.location.host;
+  document.querySelectorAll('[data-webcal]').forEach(function (a) {
+    a.href = 'webcal://' + host + a.dataset.webcal;
+  });
+  document.querySelectorAll('[data-gcal]').forEach(function (a) {
+    var webcal = 'webcal://' + host + a.dataset.gcal;
+    a.href = 'https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(webcal);
+  });
+
+  // Search filtering
   var search = document.getElementById('search');
   var count = document.getElementById('count');
   var noResults = document.getElementById('no-results');
@@ -189,8 +258,7 @@ ${parkItems}
 
     parks.forEach(function (el) {
       if (words.length === 0) { el.hidden = false; visible++; return; }
-      var text = el.dataset.search;
-      var match = words.every(function (w) { return text.includes(w); });
+      var match = words.every(function (w) { return el.dataset.search.includes(w); });
       el.hidden = !match;
       if (match) visible++;
     });

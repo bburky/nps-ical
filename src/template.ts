@@ -126,13 +126,13 @@ h1 { font-size: 1.4rem; font-weight: 700; color: #1b4d2e; }
 h1 span { font-weight: 400; color: #555; }
 .subtitle { font-size: 0.85rem; color: #666; margin-top: 0.3rem; }
 .search-wrap {
+  position: -webkit-sticky;
   position: sticky;
   top: 0;
   z-index: 10;
   background: #f7f7f5;
-  padding: 0.75rem 0;
+  padding: 0.75rem 0 0.5rem;
   border-bottom: 1px solid #e0e0db;
-  margin-bottom: 0.5rem;
 }
 #search {
   width: 100%;

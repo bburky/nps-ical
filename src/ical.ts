@@ -21,14 +21,18 @@ const PARK_HOURS_TYPES = new Set([
 
 function stripHtml(html: string): string {
   return String(html || '')
-    .replace(/<[^>]*>/g, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6]|blockquote|tr)>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/[ \t]*\n[ \t]*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
@@ -83,7 +87,7 @@ function parseRecurrenceRule(ruleStr: string): {
   return { rrule, exdates };
 }
 
-function buildDescription(event: NpsEvent, eventsPageUrl: string): string {
+function buildDescription(event: NpsEvent, eventsPageUrl: string, eventDetailsUrl: string): string {
   const parts: string[] = [];
   const body = stripHtml(event.description);
   if (body) parts.push(body);
@@ -91,6 +95,7 @@ function buildDescription(event: NpsEvent, eventsPageUrl: string): string {
   if (event.regresinfo) parts.push(`Registration: ${stripHtml(event.regresinfo)}`);
   if (event.regresurl) parts.push(`Register: ${event.regresurl}`);
   if (event.infourl) parts.push(`More info: ${event.infourl}`);
+  parts.push(`Event details: ${eventDetailsUrl}`);
   parts.push(`All events: ${eventsPageUrl}`);
   return parts.join('\n\n');
 }
@@ -111,8 +116,10 @@ function toIcsEvents(npsEvent: NpsEvent, eventsPageUrl: string): EventAttributes
   // not the end of each occurrence. Each occurrence ends on the same day it starts.
   const occurrenceEndDate = isRecurring ? dateArr : (parseDate(npsEvent.dateend) ?? dateArr);
 
-  const description = buildDescription(npsEvent, eventsPageUrl);
-  const url = npsEvent.infourl || npsEvent.regresurl || eventsPageUrl;
+  const eventId = npsEvent.id || npsEvent.eventid;
+  const eventDetailsUrl = `https://www.nps.gov/planyourvisit/event-details.htm?id=${eventId}`;
+  const description = buildDescription(npsEvent, eventsPageUrl, eventDetailsUrl);
+  const url = npsEvent.infourl || npsEvent.regresurl || eventDetailsUrl;
   const uid = `${npsEvent.id || npsEvent.eventid}@nps-ical`;
 
   const base: Partial<EventAttributes> = {
@@ -162,7 +169,7 @@ function toIcsEvents(npsEvent: NpsEvent, eventsPageUrl: string): EventAttributes
 }
 
 export function generateICS(parkCode: string, parkName: string, npsEvents: NpsEvent[], timezone?: string | null): string {
-  const eventsPageUrl = `https://www.nps.gov/${parkCode}/planyourvisit/events.htm`;
+  const eventsPageUrl = `https://www.nps.gov/${parkCode}/planyourvisit/calendar.htm`;
   const calName = `${parkName} Events`;
 
   const icsEvents = npsEvents.flatMap((e) => toIcsEvents(e, eventsPageUrl));

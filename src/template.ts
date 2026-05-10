@@ -212,7 +212,7 @@ ${SVG_DEFS}
     <p class="subtitle">Subscribe to any park's upcoming events in your calendar app.</p>
   </header>
   <div class="search-wrap">
-    <input id="search" type="search" placeholder="Search parks, states, designations…" autocomplete="off" spellcheck="false">
+    <input id="search" type="search" placeholder="Search parks, states, designations…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" autofocus>
     <div id="count">${total} parks</div>
   </div>
   <ul class="park-list" id="park-list">

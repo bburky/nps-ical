@@ -38,6 +38,13 @@ function icsHeaders(cacheStatus: 'HIT' | 'MISS'): Record<string, string> {
   };
 }
 
+// ── global error handler ──────────────────────────────────────────────────────
+
+app.onError((err, c) => {
+  console.error(`[ERROR] ${c.req.method} ${c.req.url}`, err);
+  return c.text(`Internal server error: ${err.message}`, 500);
+});
+
 // ── routes ────────────────────────────────────────────────────────────────────
 
 /**
@@ -45,20 +52,29 @@ function icsHeaders(cacheStatus: 'HIT' | 'MISS'): Record<string, string> {
  * Server-rendered park index — all data is embedded, no client-side API calls.
  */
 app.get('/', async (c) => {
+  console.log('[GET] /');
+
   const cached = appCache.get<string>('index:html');
   if (cached) {
+    console.log('[cache] index HIT');
     return c.html(cached, 200, { 'Cache-Control': INDEX_CC, 'X-Cache': 'HIT' });
   }
 
   const apiKey = getApiKey(c);
-  if (!apiKey) return c.text('NPS_API_KEY environment variable is not set.', 500);
+  if (!apiKey) {
+    console.error('[ERROR] NPS_API_KEY is not set');
+    return c.text('NPS_API_KEY environment variable is not set.', 500);
+  }
 
+  console.log('[nps] fetching all parks…');
   let parks: NpsPark[];
   try {
     parks = await getParks(apiKey);
   } catch (err) {
+    console.error('[ERROR] fetchAllParks:', err);
     return c.text(`Failed to fetch parks from NPS API: ${(err as Error).message}`, 502);
   }
+  console.log(`[nps] got ${parks.length} parks`);
 
   const html = renderIndex(parks);
   appCache.set('index:html', html, INDEX_TTL_MS);
@@ -73,27 +89,41 @@ app.get('/', async (c) => {
  */
 app.get('/:parkCode{[a-z0-9-]+}.ics', async (c) => {
   const parkCode = c.req.param('parkCode').toLowerCase();
-  const cacheKey = `ics:${parkCode}`;
+  console.log(`[GET] /${parkCode}.ics`);
 
+  const cacheKey = `ics:${parkCode}`;
   const cached = appCache.get<string>(cacheKey);
-  if (cached) return new Response(cached, { status: 200, headers: icsHeaders('HIT') });
+  if (cached) {
+    console.log(`[cache] ${cacheKey} HIT`);
+    return new Response(cached, { status: 200, headers: icsHeaders('HIT') });
+  }
 
   const apiKey = getApiKey(c);
-  if (!apiKey) return c.text('NPS_API_KEY environment variable is not set.', 500);
+  if (!apiKey) {
+    console.error('[ERROR] NPS_API_KEY is not set');
+    return c.text('NPS_API_KEY environment variable is not set.', 500);
+  }
 
   let parks: NpsPark[];
   try {
     parks = await getParks(apiKey);
   } catch (err) {
+    console.error('[ERROR] fetchAllParks:', err);
     return c.text(`Failed to fetch parks from NPS API: ${(err as Error).message}`, 502);
   }
 
   const park = findPark(parks, parkCode);
   if (!park) return c.text(`Park code "${parkCode}" not found.`, 404);
 
-  const events = await fetchParkEvents(apiKey, parkCode).catch((err: Error) => {
-    throw new Error(`Failed to fetch events: ${err.message}`);
-  });
+  console.log(`[nps] fetching events for ${parkCode}…`);
+  let events;
+  try {
+    events = await fetchParkEvents(apiKey, parkCode);
+  } catch (err) {
+    console.error(`[ERROR] fetchParkEvents(${parkCode}):`, err);
+    return c.text(`Failed to fetch events from NPS API: ${(err as Error).message}`, 502);
+  }
+  console.log(`[nps] got ${events.length} events for ${parkCode}`);
 
   const icsData = generateICS(parkCode, park.fullName, events);
   appCache.set(cacheKey, icsData, ICS_TTL_MS);

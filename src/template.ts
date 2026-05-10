@@ -95,7 +95,8 @@ const SVG_DEFS = `<svg aria-hidden="true" style="position:absolute;width:0;heigh
   </defs>
 </svg>`;
 
-export function renderIndex(parks: NpsPark[]): string {
+export function renderIndex(parks: NpsPark[], opts: { indexCacheHours: number; icsCacheHours: number }): string {
+  const { icsCacheHours } = opts;
   const sorted = [...parks].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   const parkItems = sorted.map(renderPark).join('\n');
   const total = sorted.length;
@@ -218,7 +219,7 @@ ${SVG_DEFS}
 ${parkItems}
   </ul>
   <p class="no-results" id="no-results">No parks match your search.</p>
-  <footer>Data from the <a href="https://www.nps.gov/subjects/developer/" style="color:#888">NPS API</a>. iCal feeds refresh every 12 hours. Vibecoded with <a href="https://claude.ai" style="color:#888">Claude</a>, no promises on accuracy.</footer>
+  <footer>Data from the <a href="https://www.nps.gov/subjects/developer/" style="color:#888">NPS API</a>. iCal feeds refresh every ${icsCacheHours} hour${icsCacheHours === 1 ? '' : 's'}. Vibecoded with <a href="https://claude.ai" style="color:#888">Claude</a>, no promises on accuracy.</footer>
 </div>
 <script>
 (function () {

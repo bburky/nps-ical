@@ -1,0 +1,8 @@
+name = "nps-ical"
+main = "worker.ts"
+compatibility_date = "2024-09-23"
+
+# Plain-text vars. Set NPS_API_KEY as a secret instead (see below).
+[vars]
+INDEX_CACHE_HOURS = "24"
+ICS_CACHE_HOURS   = "12"

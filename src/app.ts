@@ -4,36 +4,48 @@ import { fetchAllParks, fetchParkEvents, findPark, type NpsPark } from './nps';
 import { generateICS } from './ical';
 import { renderIndex } from './template';
 
-const INDEX_TTL_MS = 24 * 60 * 60 * 1000;
-const ICS_TTL_MS = 12 * 60 * 60 * 1000;
-const INDEX_CC = 'public, max-age=86400, stale-while-revalidate=3600';
-const ICS_CC = 'public, max-age=43200, stale-while-revalidate=1800';
-
-// Bindings type for Cloudflare Workers / other serverless platforms
-type Bindings = { NPS_API_KEY?: string };
+// Bindings for Cloudflare Workers / other serverless platforms.
+// All vars are strings; NPS_API_KEY should be set as a secret.
+type Bindings = {
+  NPS_API_KEY?: string;
+  INDEX_CACHE_HOURS?: string;
+  ICS_CACHE_HOURS?: string;
+};
 
 const appCache = new Cache();
 const app = new Hono<{ Bindings: Bindings }>();
 
-function getApiKey(c: Context<{ Bindings: Bindings }>): string {
-  return c.env?.NPS_API_KEY
-    ?? (typeof process !== 'undefined' ? process.env.NPS_API_KEY : undefined)
-    ?? '';
+// ── env helpers ───────────────────────────────────────────────────────────────
+
+function getEnv(c: Context<{ Bindings: Bindings }>, key: keyof Bindings): string | undefined {
+  return c.env?.[key] ?? (typeof process !== 'undefined' ? process.env[key] : undefined);
 }
 
-async function getParks(apiKey: string): Promise<NpsPark[]> {
+function getApiKey(c: Context<{ Bindings: Bindings }>): string {
+  return getEnv(c, 'NPS_API_KEY') ?? '';
+}
+
+function getCacheHours(c: Context<{ Bindings: Bindings }>, key: keyof Bindings, defaultHours: number): number {
+  const n = parseInt(getEnv(c, key) ?? '', 10);
+  return Number.isFinite(n) && n > 0 ? n : defaultHours;
+}
+
+// ── shared helpers ────────────────────────────────────────────────────────────
+
+async function getParks(apiKey: string, ttlMs: number): Promise<NpsPark[]> {
   const cached = appCache.get<NpsPark[]>('parks');
   if (cached) return cached;
   const parks = await fetchAllParks(apiKey);
-  appCache.set('parks', parks, INDEX_TTL_MS);
+  appCache.set('parks', parks, ttlMs);
   return parks;
 }
 
-function icsHeaders(cacheStatus: 'HIT' | 'MISS'): Record<string, string> {
+function icsHeaders(hours: number, cacheStatus: 'HIT' | 'MISS'): Record<string, string> {
+  const secs = hours * 3600;
   return {
     'Content-Type': 'text/calendar; charset=utf-8',
-    'Cache-Control': ICS_CC,
-    'X-Published-TTL': 'PT12H',
+    'Cache-Control': `public, max-age=${secs}, stale-while-revalidate=1800`,
+    'X-Published-TTL': `PT${hours}H`,
     'X-Cache': cacheStatus,
   };
 }
@@ -54,10 +66,15 @@ app.onError((err, c) => {
 app.get('/', async (c) => {
   console.log('[GET] /');
 
+  const indexHours = getCacheHours(c, 'INDEX_CACHE_HOURS', 24);
+  const icsHours   = getCacheHours(c, 'ICS_CACHE_HOURS', 12);
+  const indexTtlMs = indexHours * 3600 * 1000;
+  const indexCC    = `public, max-age=${indexHours * 3600}, stale-while-revalidate=3600`;
+
   const cached = appCache.get<string>('index:html');
   if (cached) {
     console.log('[cache] index HIT');
-    return c.html(cached, 200, { 'Cache-Control': INDEX_CC, 'X-Cache': 'HIT' });
+    return c.html(cached, 200, { 'Cache-Control': indexCC, 'X-Cache': 'HIT' });
   }
 
   const apiKey = getApiKey(c);
@@ -69,16 +86,16 @@ app.get('/', async (c) => {
   console.log('[nps] fetching all parks…');
   let parks: NpsPark[];
   try {
-    parks = await getParks(apiKey);
+    parks = await getParks(apiKey, indexTtlMs);
   } catch (err) {
     console.error('[ERROR] fetchAllParks:', err);
     return c.text(`Failed to fetch parks from NPS API: ${(err as Error).message}`, 502);
   }
   console.log(`[nps] got ${parks.length} parks`);
 
-  const html = renderIndex(parks);
-  appCache.set('index:html', html, INDEX_TTL_MS);
-  return c.html(html, 200, { 'Cache-Control': INDEX_CC, 'X-Cache': 'MISS' });
+  const html = renderIndex(parks, { indexCacheHours: indexHours, icsCacheHours: icsHours });
+  appCache.set('index:html', html, indexTtlMs);
+  return c.html(html, 200, { 'Cache-Control': indexCC, 'X-Cache': 'MISS' });
 });
 
 /**
@@ -91,11 +108,14 @@ app.get('/:filename', async (c) => {
   const parkCode = filename.slice(0, -4).toLowerCase();
   console.log(`[GET] /${parkCode}.ics`);
 
-  const cacheKey = `ics:${parkCode}`;
+  const icsHours   = getCacheHours(c, 'ICS_CACHE_HOURS', 12);
+  const icsTtlMs   = icsHours * 3600 * 1000;
+  const cacheKey   = `ics:${parkCode}`;
+
   const cached = appCache.get<string>(cacheKey);
   if (cached) {
     console.log(`[cache] ${cacheKey} HIT`);
-    return new Response(cached, { status: 200, headers: icsHeaders('HIT') });
+    return new Response(cached, { status: 200, headers: icsHeaders(icsHours, 'HIT') });
   }
 
   const apiKey = getApiKey(c);
@@ -104,9 +124,10 @@ app.get('/:filename', async (c) => {
     return c.text('NPS_API_KEY environment variable is not set.', 500);
   }
 
+  const indexHours = getCacheHours(c, 'INDEX_CACHE_HOURS', 24);
   let parks: NpsPark[];
   try {
-    parks = await getParks(apiKey);
+    parks = await getParks(apiKey, indexHours * 3600 * 1000);
   } catch (err) {
     console.error('[ERROR] fetchAllParks:', err);
     return c.text(`Failed to fetch parks from NPS API: ${(err as Error).message}`, 502);
@@ -126,8 +147,8 @@ app.get('/:filename', async (c) => {
   console.log(`[nps] got ${events.length} events for ${parkCode}`);
 
   const icsData = generateICS(parkCode, park.fullName, events);
-  appCache.set(cacheKey, icsData, ICS_TTL_MS);
-  return new Response(icsData, { status: 200, headers: icsHeaders('MISS') });
+  appCache.set(cacheKey, icsData, icsTtlMs);
+  return new Response(icsData, { status: 200, headers: icsHeaders(icsHours, 'MISS') });
 });
 
 export default app;

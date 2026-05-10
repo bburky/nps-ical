@@ -6,6 +6,8 @@
   "scripts": {
     "start": "tsx index.ts",
     "dev": "tsx --watch index.ts",
+    "cf:dev": "wrangler dev",
+    "cf:deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

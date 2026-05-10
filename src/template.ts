@@ -110,6 +110,7 @@ export function renderIndex(parks: NpsPark[], opts: { indexCacheHours: number; i
 <title>National Park Service — Unofficial iCal Event Feeds</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { overflow-x: clip; }
 body {
   font-family: system-ui, -apple-system, sans-serif;
   color: #1a1a1a;
@@ -194,7 +195,8 @@ h1 span { font-weight: 400; color: #555; }
 .cal-links {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.55rem;
 }
 .no-results { padding: 2rem 0; color: #888; font-size: 0.9rem; display: none; }
 footer { margin-top: 2rem; font-size: 0.78rem; color: #aaa; text-align: center; }

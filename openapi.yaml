@@ -1,0 +1,173 @@
+openapi: 3.1.0
+info:
+  title: NPS iCal Feeds
+  version: 1.0.0
+  description: |
+    iCal event feeds for National Park Service sites, plus an index page listing
+    every park with links to its official site and iCal feed.
+
+    Data is sourced from the [NPS API](https://www.nps.gov/subjects/developer/).
+    Set the `NPS_API_KEY` environment variable before starting the server.
+
+    ## Caching
+
+    | Endpoint | CDN / HTTP `Cache-Control` | In-app TTL |
+    |---|---|---|
+    | `GET /` | `public, max-age=86400, stale-while-revalidate=3600` | 24 hr |
+    | `GET /ics/:parkCode` | `public, max-age=43200, stale-while-revalidate=1800` | 12 hr |
+
+    iCal feeds also advertise their refresh interval to calendar clients via the
+    `REFRESH-INTERVAL` and `X-PUBLISHED-TTL` properties inside the VCALENDAR
+    component, and the `X-Published-TTL` HTTP response header.
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://your-deployment.example.com
+    description: Production
+
+paths:
+  /:
+    get:
+      operationId: getIndex
+      summary: Park index page
+      description: |
+        Returns a fully server-rendered HTML page listing all NPS parks.
+        All park data is embedded in the page; no further API calls are made
+        by the browser. Includes a client-side search bar that filters by
+        park name, designation, state abbreviation, state name, and city.
+
+        The response is cached in-app for 24 hours and instructs CDNs to do
+        the same via `Cache-Control`.
+      tags: [Pages]
+      responses:
+        '200':
+          description: HTML index page
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: public, max-age=86400, stale-while-revalidate=3600
+            X-Cache:
+              description: Whether the response was served from the in-app cache.
+              schema:
+                type: string
+                enum: [HIT, MISS]
+          content:
+            text/html:
+              schema:
+                type: string
+        '500':
+          description: NPS_API_KEY not configured
+          content:
+            text/plain:
+              schema:
+                type: string
+        '502':
+          description: NPS API request failed
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /ics/{parkCode}:
+    get:
+      operationId: getParkICS
+      summary: iCal feed for a park's upcoming events
+      description: |
+        Returns an RFC 5545 iCalendar feed containing upcoming events for the
+        given NPS park code (e.g. `hosp` for Hot Springs National Park,
+        `yell` for Yellowstone).
+
+        Park codes match the four-letter codes used by the NPS API and in
+        `www.nps.gov` URLs (e.g. `nps.gov/yell/`).
+
+        The feed omits park-hours entries and includes most other event types.
+        Each event contains a description with fee/registration information and
+        a link to the park events page.
+
+        Calendar clients are instructed to refresh every 12 hours via the
+        `REFRESH-INTERVAL` VCALENDAR property and the `X-Published-TTL` header.
+      tags: [Feeds]
+      parameters:
+        - name: parkCode
+          in: path
+          required: true
+          description: Four-letter NPS park code (case-insensitive).
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 10
+            example: hosp
+      responses:
+        '200':
+          description: iCalendar feed
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: text/calendar; charset=utf-8
+            Cache-Control:
+              schema:
+                type: string
+                example: public, max-age=43200, stale-while-revalidate=1800
+            X-Published-TTL:
+              description: Suggested refresh interval for calendar clients (ISO 8601 duration).
+              schema:
+                type: string
+                example: PT12H
+            X-Cache:
+              description: Whether the response was served from the in-app cache.
+              schema:
+                type: string
+                enum: [HIT, MISS]
+          content:
+            text/calendar:
+              schema:
+                type: string
+                description: RFC 5545 iCalendar data (VCALENDAR with zero or more VEVENTs).
+              example: |
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//NPS iCal//Hot Springs National Park//EN
+                X-WR-CALNAME:Hot Springs National Park Events
+                X-WR-CALDESC:Upcoming events at Hot Springs National Park
+                REFRESH-INTERVAL;VALUE=DURATION:PT12H
+                X-PUBLISHED-TTL:PT12H
+                CALSCALE:GREGORIAN
+                METHOD:PUBLISH
+                BEGIN:VEVENT
+                UID:abc123@nps-ical
+                SUMMARY:Ranger-Led Walk
+                DTSTART;TZID=local:20260515T100000
+                DTEND;TZID=local:20260515T120000
+                DESCRIPTION:Join a park ranger for a guided walk.\n\nAll events: https://www.nps.gov/hosp/planyourvisit/events.htm
+                LOCATION:Hot Springs National Park
+                URL:https://www.nps.gov/planyourvisit/event-details.htm?id=abc
+                END:VEVENT
+                END:VCALENDAR
+        '404':
+          description: Park code not found
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: 'Park code "xxxx" not found.'
+        '500':
+          description: NPS_API_KEY not configured or ICS generation error
+          content:
+            text/plain:
+              schema:
+                type: string
+        '502':
+          description: NPS API request failed
+          content:
+            text/plain:
+              schema:
+                type: string
+
+tags:
+  - name: Pages
+    description: HTML pages
+  - name: Feeds
+    description: iCalendar feeds

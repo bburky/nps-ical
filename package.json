@@ -1,0 +1,19 @@
+{
+  "name": "nps-ical",
+  "version": "1.0.0",
+  "description": "iCal feeds for National Park Service events",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "hono": "^4.7.9",
+    "ics": "^3.8.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -32,11 +32,52 @@ function getCacheHours(c: Context<{ Bindings: Bindings }>, key: keyof Bindings, 
 
 // ── shared helpers ────────────────────────────────────────────────────────────
 
+// A stable synthetic cache key — any valid URL works with caches.open().
+const CF_PARKS_CACHE_KEY = 'https://nps-ical.internal/parks-v1';
+
+// Returns the Cloudflare named-cache handle, or null in Node.js where the
+// Cache API is unavailable.
+async function openCFCache(): Promise<{ match(k: string): Promise<Response | undefined>; put(k: string, v: Response): Promise<void> } | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return await (globalThis as any).caches?.open?.('nps-ical') ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function getParks(apiKey: string, ttlMs: number): Promise<NpsPark[]> {
-  const cached = appCache.get<NpsPark[]>('parks');
-  if (cached) return cached;
+  // 1. In-process cache (same Worker instance, fastest)
+  const inProcess = appCache.get<NpsPark[]>('parks');
+  if (inProcess) return inProcess;
+
+  // 2. Cloudflare shared cache (survives across Worker instances)
+  const cfCache = await openCFCache();
+  if (cfCache) {
+    const hit = await cfCache.match(CF_PARKS_CACHE_KEY);
+    if (hit) {
+      console.log('[cache] parks CF HIT');
+      const parks = (await hit.json()) as NpsPark[];
+      appCache.set('parks', parks, ttlMs);
+      return parks;
+    }
+  }
+
+  // 3. Fetch from NPS API
   const parks = await fetchAllParks(apiKey);
   appCache.set('parks', parks, ttlMs);
+
+  // Populate Cloudflare cache so other Worker instances benefit.
+  if (cfCache) {
+    const ttlSecs = Math.round(ttlMs / 1000);
+    await cfCache.put(
+      CF_PARKS_CACHE_KEY,
+      new Response(JSON.stringify(parks), {
+        headers: { 'Cache-Control': `public, max-age=${ttlSecs}` },
+      }),
+    );
+  }
+
   return parks;
 }
 

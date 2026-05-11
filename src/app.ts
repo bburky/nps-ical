@@ -30,14 +30,16 @@ function getCacheHours(c: Context<{ Bindings: Bindings }>, key: keyof Bindings, 
   return Number.isFinite(n) && n > 0 ? n : defaultHours;
 }
 
-// ── shared helpers ────────────────────────────────────────────────────────────
+// ── Cloudflare Cache API helpers ──────────────────────────────────────────────
 
-// A stable synthetic cache key — any valid URL works with caches.open().
-const CF_PARKS_CACHE_KEY = 'https://nps-ical.internal/parks-v1';
+type CFCache = {
+  match(key: string): Promise<Response | undefined>;
+  put(key: string, value: Response): Promise<void>;
+} | null;
 
-// Returns the Cloudflare named-cache handle, or null in Node.js where the
-// Cache API is unavailable.
-async function openCFCache(): Promise<{ match(k: string): Promise<Response | undefined>; put(k: string, v: Response): Promise<void> } | null> {
+// Opens the named Cloudflare Workers cache, or returns null in Node.js where
+// the Cache API is unavailable. All synthetic keys use https://nps-ical.internal/*.
+async function openCFCache(): Promise<CFCache> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return await (globalThis as any).caches?.open?.('nps-ical') ?? null;
@@ -46,48 +48,48 @@ async function openCFCache(): Promise<{ match(k: string): Promise<Response | und
   }
 }
 
-async function getParks(apiKey: string, ttlMs: number): Promise<NpsPark[]> {
-  // 1. In-process cache (same Worker instance, fastest)
+async function cfGet(cache: CFCache, key: string): Promise<Response | null> {
+  if (!cache) return null;
+  return (await cache.match(key)) ?? null;
+}
+
+async function cfPut(cache: CFCache, key: string, body: string, ttlSecs: number, contentType: string): Promise<void> {
+  if (!cache) return;
+  await cache.put(key, new Response(body, {
+    headers: {
+      'Content-Type': contentType,
+      'Cache-Control': `public, max-age=${ttlSecs}`,
+    },
+  }));
+}
+
+// ── park list (in-process → CF Cache → NPS API) ───────────────────────────────
+
+async function getParks(apiKey: string, ttlMs: number, cfCache: CFCache): Promise<NpsPark[]> {
   const inProcess = appCache.get<NpsPark[]>('parks');
   if (inProcess) return inProcess;
 
-  // 2. Cloudflare shared cache (survives across Worker instances)
-  const cfCache = await openCFCache();
-  if (cfCache) {
-    const hit = await cfCache.match(CF_PARKS_CACHE_KEY);
-    if (hit) {
-      console.log('[cache] parks CF HIT');
-      const parks = (await hit.json()) as NpsPark[];
-      appCache.set('parks', parks, ttlMs);
-      return parks;
-    }
+  const cfHit = await cfGet(cfCache, 'https://nps-ical.internal/parks');
+  if (cfHit) {
+    console.log('[cache] parks CF HIT');
+    const parks = (await cfHit.json()) as NpsPark[];
+    appCache.set('parks', parks, ttlMs);
+    return parks;
   }
 
-  // 3. Fetch from NPS API
   const parks = await fetchAllParks(apiKey);
   appCache.set('parks', parks, ttlMs);
-
-  // Populate Cloudflare cache so other Worker instances benefit.
-  if (cfCache) {
-    const ttlSecs = Math.round(ttlMs / 1000);
-    await cfCache.put(
-      CF_PARKS_CACHE_KEY,
-      new Response(JSON.stringify(parks), {
-        headers: { 'Cache-Control': `public, max-age=${ttlSecs}` },
-      }),
-    );
-  }
-
+  await cfPut(cfCache, 'https://nps-ical.internal/parks', JSON.stringify(parks), Math.round(ttlMs / 1000), 'application/json');
   return parks;
 }
 
-function icsHeaders(hours: number, cacheStatus: 'HIT' | 'MISS'): Record<string, string> {
-  const secs = hours * 3600;
+// ── response headers ──────────────────────────────────────────────────────────
+
+function icsHeaders(hours: number): Record<string, string> {
   return {
     'Content-Type': 'text/calendar; charset=utf-8',
-    'Cache-Control': `public, max-age=${secs}, stale-while-revalidate=1800`,
+    'Cache-Control': `public, max-age=${hours * 3600}, stale-while-revalidate=1800`,
     'X-Published-TTL': `PT${hours}H`,
-    'X-Cache': cacheStatus,
   };
 }
 
@@ -111,11 +113,20 @@ app.get('/', async (c) => {
   const icsHours   = getCacheHours(c, 'ICS_CACHE_HOURS', 12);
   const indexTtlMs = indexHours * 3600 * 1000;
   const indexCC    = `public, max-age=${indexHours * 3600}, stale-while-revalidate=3600`;
+  const cfKey      = 'https://nps-ical.internal/index';
 
-  const cached = appCache.get<string>('index:html');
-  if (cached) {
-    console.log('[cache] index HIT');
-    return c.html(cached, 200, { 'Cache-Control': indexCC, 'X-Cache': 'HIT' });
+  const inProcess = appCache.get<string>('index:html');
+  if (inProcess) {
+    return c.html(inProcess, 200, { 'Cache-Control': indexCC });
+  }
+
+  const cfCache = await openCFCache();
+  const cfHit = await cfGet(cfCache, cfKey);
+  if (cfHit) {
+    console.log('[cache] index CF HIT');
+    const html = await cfHit.text();
+    appCache.set('index:html', html, indexTtlMs);
+    return c.html(html, 200, { 'Cache-Control': indexCC });
   }
 
   const apiKey = getApiKey(c);
@@ -127,7 +138,7 @@ app.get('/', async (c) => {
   console.log('[nps] fetching all parks…');
   let parks: NpsPark[];
   try {
-    parks = await getParks(apiKey, indexTtlMs);
+    parks = await getParks(apiKey, indexTtlMs, cfCache);
   } catch (err) {
     console.error('[ERROR] fetchAllParks:', err);
     return c.text(`Failed to fetch parks from NPS API: ${(err as Error).message}`, 502);
@@ -136,7 +147,8 @@ app.get('/', async (c) => {
 
   const html = renderIndex(parks, { indexCacheHours: indexHours, icsCacheHours: icsHours });
   appCache.set('index:html', html, indexTtlMs);
-  return c.html(html, 200, { 'Cache-Control': indexCC, 'X-Cache': 'MISS' });
+  await cfPut(cfCache, cfKey, html, indexHours * 3600, 'text/html; charset=utf-8');
+  return c.html(html, 200, { 'Cache-Control': indexCC });
 });
 
 /**
@@ -149,14 +161,23 @@ app.get('/:filename', async (c) => {
   const parkCode = filename.slice(0, -4).toLowerCase();
   console.log(`[GET] /${parkCode}.ics`);
 
-  const icsHours   = getCacheHours(c, 'ICS_CACHE_HOURS', 12);
-  const icsTtlMs   = icsHours * 3600 * 1000;
-  const cacheKey   = `ics:${parkCode}`;
+  const icsHours = getCacheHours(c, 'ICS_CACHE_HOURS', 12);
+  const icsTtlMs = icsHours * 3600 * 1000;
+  const appKey   = `ics:${parkCode}`;
+  const cfKey    = `https://nps-ical.internal/ics/${parkCode}`;
 
-  const cached = appCache.get<string>(cacheKey);
-  if (cached) {
-    console.log(`[cache] ${cacheKey} HIT`);
-    return new Response(cached, { status: 200, headers: icsHeaders(icsHours, 'HIT') });
+  const inProcess = appCache.get<string>(appKey);
+  if (inProcess) {
+    return new Response(inProcess, { status: 200, headers: icsHeaders(icsHours) });
+  }
+
+  const cfCache = await openCFCache();
+  const cfHit = await cfGet(cfCache, cfKey);
+  if (cfHit) {
+    console.log(`[cache] ${appKey} CF HIT`);
+    const icsData = await cfHit.text();
+    appCache.set(appKey, icsData, icsTtlMs);
+    return new Response(icsData, { status: 200, headers: icsHeaders(icsHours) });
   }
 
   const apiKey = getApiKey(c);
@@ -168,7 +189,7 @@ app.get('/:filename', async (c) => {
   const indexHours = getCacheHours(c, 'INDEX_CACHE_HOURS', 24);
   let parks: NpsPark[];
   try {
-    parks = await getParks(apiKey, indexHours * 3600 * 1000);
+    parks = await getParks(apiKey, indexHours * 3600 * 1000, cfCache);
   } catch (err) {
     console.error('[ERROR] fetchAllParks:', err);
     return c.text(`Failed to fetch parks from NPS API: ${(err as Error).message}`, 502);
@@ -189,8 +210,9 @@ app.get('/:filename', async (c) => {
 
   const timezone = timezoneForCoords(park.latitude, park.longitude);
   const icsData = generateICS(parkCode, park.fullName, events, timezone);
-  appCache.set(cacheKey, icsData, icsTtlMs);
-  return new Response(icsData, { status: 200, headers: icsHeaders(icsHours, 'MISS') });
+  appCache.set(appKey, icsData, icsTtlMs);
+  await cfPut(cfCache, cfKey, icsData, icsHours * 3600, 'text/calendar; charset=utf-8');
+  return new Response(icsData, { status: 200, headers: icsHeaders(icsHours) });
 });
 
 export default app;

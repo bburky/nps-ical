@@ -22,8 +22,8 @@ All config is via environment variables:
 | Variable | Default | Description |
 |---|---|---|
 | `NPS_API_KEY` | — | **Required.** NPS API key. Get one free at [nps.gov/subjects/developer](https://www.nps.gov/subjects/developer/get-started.htm) |
-| `INDEX_CACHE_HOURS` | `24` | How long to cache the park index page (in-process + `Cache-Control`) |
-| `ICS_CACHE_HOURS` | `12` | How long to cache iCal feeds (in-process + `Cache-Control` + `REFRESH-INTERVAL`) |
+| `INDEX_CACHE_HOURS` | `24` | How long to cache the park index page |
+| `ICS_CACHE_HOURS` | `12` | How long to cache iCal feeds (`Cache-Control` + `REFRESH-INTERVAL` + cache store TTL) |
 | `PORT` | `3000` | Node.js only |
 
 ## Node.js
@@ -72,25 +72,20 @@ Or connect your repo in the Cloudflare Pages dashboard and set:
 
 Set `NPS_API_KEY` under **Settings → Environment variables → Add secret**.
 
-### Caching on Cloudflare
+## Caching
 
-Both responses include `Cache-Control: public, max-age=…` which Cloudflare respects at the edge automatically. You can verify caching is working by checking the `cf-cache-status` response header (`HIT` = served from edge cache).
+Cloudflare Workers receive every request regardless of `Cache-Control` headers — the CDN does not automatically cache Worker responses. Caching is handled explicitly inside the Worker using the [Cache API](https://developers.cloudflare.com/workers/runtime-apis/cache/).
 
-If HTML responses aren't being cached at the edge (some plans/configurations exclude HTML by default), add a **Cache Rule** in the Cloudflare dashboard:
-
-- **When:** `hostname is your-domain.com`
-- **Cache eligibility:** Cache everything
-- **Edge TTL:** Override — use `Cache-Control` header value
-
-`.ics` responses should be cached automatically on all plans since Cloudflare treats that extension as cacheable by default.
-
-## Caching summary
-
-| Layer | Index page | iCal feeds |
+| Layer | What's stored | TTL |
 |---|---|---|
-| In-process (per-instance TTL) | `INDEX_CACHE_HOURS` | `ICS_CACHE_HOURS` |
-| HTTP `Cache-Control` | `public, max-age=INDEX_CACHE_HOURS×3600, stale-while-revalidate=3600` | `public, max-age=ICS_CACHE_HOURS×3600, stale-while-revalidate=1800` |
-| iCal client hint | — | `REFRESH-INTERVAL:PT{n}H` + `X-Published-TTL: PT{n}H` |
+| **In-process** (per Worker instance) | Park list, index HTML, ICS per park | `INDEX_CACHE_HOURS` / `ICS_CACHE_HOURS` |
+| **Cloudflare Cache API** (shared across all instances) | Park list, index HTML, ICS per park | Same TTLs |
+| **HTTP `Cache-Control`** (subscriber's calendar app) | iCal feeds | `ICS_CACHE_HOURS` |
+| **iCal client hint** | — | `REFRESH-INTERVAL:PT{n}H` + `X-Published-TTL: PT{n}H` |
+
+Lookup order on a cache miss: in-process → CF Cache → NPS API / ICS generation. Both caches are populated on a miss so subsequent requests — including from other Worker instances — are served from cache.
+
+When running locally with Node.js the CF Cache layer is skipped entirely (`globalThis.caches` is unavailable); only the in-process cache is used.
 
 ## OpenAPI spec
 
